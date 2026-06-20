@@ -21,11 +21,20 @@ void fillRect8(
   arcada.display->fillRect(x, y, w, h, palette[color]);
 }
 
-
+int l=0;
+int menuItem=1;
+bool milc=false;
+int oldMenuItem=1;
+uint32_t t0 = 0;   // last battery update time
+float bat = 0;
 void setup() {
   arcada.arcadaBegin();
   arcada.displayBegin();
   arcada.setBacklight(255);  // 0-255
+  Serial.begin(9600);
+  while (!Serial) {
+    delay(10);
+  }
 
   initPalette();
   fillScreen8(0);
@@ -34,12 +43,54 @@ void setup() {
   arcada.display->setTextColor(palette[0]); // Use one of your palette colors
   arcada.display->setTextSize(2);         // Scale factor (1 = 6x8 px)
   arcada.display->print("OpenCircuit");
-  arcada.display->setCursor(50, 47);      // x, y position
+  arcada.display->setCursor(10, 44);      // x, y position
   arcada.display->setTextColor(palette[2]); // Use one of your palette colors
-  arcada.display->setTextSize(1);         // Scale factor (1 = 6x8 px)
-  arcada.display->print("V0.0.1 BETA");
+  arcada.display->setTextSize(1); arcada.display->print("V1 BETA");
+  arcada.display->setCursor(10, 60); arcada.display->print("Grand Prix");
+  arcada.display->setCursor(10, 70); arcada.display->print("Custom Race");
+  arcada.display->setCursor(10, 80); arcada.display->print("Time Trial");
+  arcada.display->setCursor(10, 90); arcada.display->print("Competitive (coming soon)");
+  arcada.display->setCursor(10, 100); arcada.display->print("Manage tracks");
+  arcada.display->setCursor(10, 110); arcada.display->print("Settings");
+  arcada.display->setCursor(10, 120); arcada.display->print("Power off");
+
 }
 
 void loop() {
- // Start building menu select items next time. A should be start, B should be power off or something like that. You can add more options and eventually we'll incorporate WiFi stuff.
+ uint8_t pressed_buttons = arcada.readButtons();
+ uint32_t t = millis();
+
+ switch (l) {
+  case 0: {
+    if (!milc) {
+      arcada.display->fillRect(2,60 + (oldMenuItem-1)*10,8,8,palette[0]);
+      arcada.display->setCursor(2,60 + (menuItem-1)*10); arcada.display->print(">");
+      milc=true;
+    }
+    if (pressed_buttons & ARCADA_BUTTONMASK_A) {
+      // Continue here
+    } else if ((pressed_buttons & ARCADA_BUTTONMASK_DOWN) && (menuItem < 7)) {
+      oldMenuItem=menuItem;
+      menuItem++;
+      milc=false;
+      delay(220);
+    } else if ((pressed_buttons & ARCADA_BUTTONMASK_UP) && (menuItem > 1)) {
+      oldMenuItem=menuItem;
+      menuItem--;
+      milc=false;
+      delay(220);
+
+    }
+
+    if (t - t0 > 1000) {
+      t0 = t;
+      bat = arcada.readBatterySensor();
+      arcada.display->fillRect(100, 44, 80, 8, palette[0]);
+      arcada.display->setCursor(100, 44);
+      arcada.display->print("BAT: ");
+      arcada.display->print(bat);
+    }
+    break;
+  }
+ }
 }
