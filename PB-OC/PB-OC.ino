@@ -1,7 +1,15 @@
 #include <Adafruit_Arcada.h>
 #include "palette.h"
+#include "wiring_private.h"
 
 Adafruit_Arcada arcada;
+
+// Set up comms with ESP32
+Uart FeatherUART(&sercom3,13,12,SERCOM_RX_PAD_1,UART_TX_PAD_0);
+void SERCOM3_0_Handler() { FeatherUART.IrqHandler(); }
+void SERCOM3_1_Handler() { FeatherUART.IrqHandler(); }
+void SERCOM3_2_Handler() { FeatherUART.IrqHandler(); }
+void SERCOM3_3_Handler() { FeatherUART.IrqHandler(); }
 
 void drawPixel8(int16_t x, int16_t y, uint8_t color) {
   arcada.display->drawPixel(x, y, palette[color]);
@@ -9,6 +17,42 @@ void drawPixel8(int16_t x, int16_t y, uint8_t color) {
 
 void fillScreen8(uint8_t color) {
   arcada.display->fillScreen(palette[color]);
+}
+
+void wakeESP() {
+  pinMode(10, OUTPUT);
+  digitalWrite(10, LOW);
+  delay(5);
+  digitalWrite(10, HIGH);
+  delay(200);
+  digitalWrite(10, LOW);
+  arcada.setBacklight(255);
+}
+
+void tx(const char *cmd) {
+  FeatherUART.print(cmd);
+  FeatherUART.print(';');
+}
+
+char buf[16];
+uint8_t bi = 0;
+
+void rx() {
+  while (FeatherUART.available()) {
+    char c = FeatherUART.read();
+    if (c == ';') {
+      buf[bi] = '\0';
+      Serial.print("RX: ");
+      Serial.println(buf);
+      if (strcmp(buf, "OFF_ACK") == 0) {
+        arcada.setBacklight(0);
+      }
+      bi = 0;
+    } else if (bi < 15) {
+      buf[bi++] = c;
+      buf[bi] = '\0';
+    }
+  }
 }
 
 void fillRect8(
@@ -27,14 +71,17 @@ bool milc=false;
 int oldMenuItem=1;
 uint32_t t0 = 0;   // last battery update time
 float bat = 0;
+uint32_t holdStart = 0;
+bool holding = false;
 void setup() {
   arcada.arcadaBegin();
   arcada.displayBegin();
   arcada.setBacklight(255);  // 0-255
   Serial.begin(9600);
-  while (!Serial) {
-    delay(10);
-  }
+  pinPeripheral(12, PIO_SERCOM);
+  pinPeripheral(13, PIO_SERCOM);
+  FeatherUART.begin(9600);
+  delay(1000);
 
   initPalette();
   fillScreen8(0);
@@ -59,7 +106,20 @@ void setup() {
 void loop() {
  uint8_t pressed_buttons = arcada.readButtons();
  uint32_t t = millis();
-
+ rx();
+  if ((pressed_buttons & ARCADA_BUTTONMASK_START) &&
+      (pressed_buttons & ARCADA_BUTTONMASK_SELECT)) {
+    if (!holding) {
+      holding = true;
+      holdStart = millis();
+    }
+    if (millis() - holdStart > 2000) {
+      wakeESP();
+      holding = false;
+    }
+  } else {
+    holding = false;
+  }
  switch (l) {
   case 0: {
     if (!milc) {
@@ -68,7 +128,11 @@ void loop() {
       milc=true;
     }
     if (pressed_buttons & ARCADA_BUTTONMASK_A) {
-      // Continue here
+      if (menuItem == 7) {
+        // Power Off
+        tx("OFF");
+        delay(500);
+      }
     } else if ((pressed_buttons & ARCADA_BUTTONMASK_DOWN) && (menuItem < 7)) {
       oldMenuItem=menuItem;
       menuItem++;
@@ -79,8 +143,11 @@ void loop() {
       menuItem--;
       milc=false;
       delay(220);
-
+    } else if ((pressed_buttons & ARCADA_BUTTONMASK_B)) {
+      tx("TEST");
+      delay(250);
     }
+  }
 
     if (t - t0 > 1000) {
       t0 = t;
@@ -91,6 +158,5 @@ void loop() {
       arcada.display->print(bat);
     }
     break;
-  }
  }
 }
