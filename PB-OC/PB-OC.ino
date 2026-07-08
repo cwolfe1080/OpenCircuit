@@ -19,6 +19,34 @@ void fillScreen8(uint8_t color) {
   arcada.display->fillScreen(palette[color]);
 }
 
+void nap() {
+  __DSB();
+  __WFI();
+}
+bool slp = false;
+bool holding = false;
+uint32_t holdStart = 0;
+void sleepLoop() {
+  uint8_t b = arcada.readButtons();
+  if ((b & ARCADA_BUTTONMASK_START) &&
+      (b & ARCADA_BUTTONMASK_SELECT)) {
+    if (!holding) {
+      holding = true;
+      holdStart = millis();
+    }
+    if (millis() - holdStart >= 2000) {
+      wakeESP();
+      arcada.setBacklight(255);
+      slp = false;
+      holding = false;
+      delay(250);
+    }
+  } else {
+    holding = false;
+  }
+  nap();
+}
+
 void wakeESP() {
   pinMode(10, OUTPUT);
   digitalWrite(10, LOW);
@@ -27,6 +55,7 @@ void wakeESP() {
   delay(200);
   digitalWrite(10, LOW);
   arcada.setBacklight(255);
+  NVIC_SystemReset();
 }
 
 void tx(const char *cmd) {
@@ -45,7 +74,9 @@ void rx() {
       Serial.print("RX: ");
       Serial.println(buf);
       if (strcmp(buf, "OFF_ACK") == 0) {
+        arcada.display->fillScreen(palette[0]);
         arcada.setBacklight(0);
+        slp=true;
       }
       bi = 0;
     } else if (bi < 15) {
@@ -71,8 +102,6 @@ bool milc=false;
 int oldMenuItem=1;
 uint32_t t0 = 0;   // last battery update time
 float bat = 0;
-uint32_t holdStart = 0;
-bool holding = false;
 void setup() {
   arcada.arcadaBegin();
   arcada.displayBegin();
@@ -107,6 +136,10 @@ void loop() {
  uint8_t pressed_buttons = arcada.readButtons();
  uint32_t t = millis();
  rx();
+ if (slp) {
+  sleepLoop();
+  return;
+ }
   if ((pressed_buttons & ARCADA_BUTTONMASK_START) &&
       (pressed_buttons & ARCADA_BUTTONMASK_SELECT)) {
     if (!holding) {
